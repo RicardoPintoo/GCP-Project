@@ -1,3 +1,5 @@
 sales_env/
 .env
-infra/
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
