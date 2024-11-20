@@ -1,6 +1,7 @@
 from google.cloud import pubsub_v1
 import pandas as pd
 import json
+import time
 
 # Replace with your Google Cloud project and Pub/Sub topic
 PROJECT_ID = "moonlit-app-441813-v9"
@@ -8,10 +9,11 @@ TOPIC_NAME = "dev-user-events-topic"
 CSV_FILE = "input_mockdata.csv"  # Path to your CSV file
 
 def publish_messages(publisher, topic_path, data):
-    for message in data:
+    for i, message in enumerate(data):
         try:
+            time.sleep(10)
             future = publisher.publish(topic_path, json.dumps(message).encode("utf-8"))
-            print(f"Published message ID: {future.result()}")
+            print(f"Published message {i} ID: {future.result()}")
         except Exception as e:
             print(f"Error publishing message: {e}")
 
