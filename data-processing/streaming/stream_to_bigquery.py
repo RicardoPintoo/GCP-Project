@@ -5,6 +5,7 @@ from apache_beam.transforms.trigger import AfterProcessingTime, AccumulationMode
 import os
 from dotenv import load_dotenv
 import logging
+import json
 
 # Load environment variables from .env file
 load_dotenv()
@@ -15,6 +16,15 @@ region = os.getenv('REGION')
 topic_name = os.getenv('TOPIC_NAME')
 dataset_name = os.getenv('DATASET_NAME')
 table_name = os.getenv('TABLE_NAME')
+
+# Set up logging
+log_file = "pubsub_debug_directrunner.log"
+logging.basicConfig(
+    filename=log_file,
+    filemode='w',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 # Define BigQuery schema
 bq_schema = "user_id:INTEGER, event_type:STRING, timestamp:TIMESTAMP, product_id:INTEGER, page_url:STRING, device_type:STRING, location:STRING, duration_seconds:INTEGER, comment_text:STRING, subscription_plan:STRING, form_id:INTEGER, login_method:STRING, referral_source:STRING, streaming_quality:STRING, cart_items_count:INTEGER, error_message:STRING"
@@ -30,16 +40,21 @@ google_cloud_options.staging_location = "gs://dataflow_dataflow/staging"
 
 # Set pipeline options
 standard_options = options.view_as(StandardOptions)
-standard_options.view_as(StandardOptions).runner = "DirectRunner"  # Use DataflowRunner
+standard_options.view_as(StandardOptions).runner = "DataflowRunner"  # Use DataflowRunner
 standard_options.view_as(StandardOptions).streaming = True  # Enable streaming mode
 
 # Example function to process the incoming message (modify as needed)
 def process_message(message):
+    from datetime import datetime  # Import datetime inside the function
     # Example of transforming the message into a dictionary with the schema fields
+    # Convert to datetime object
+    date_obj = datetime.strptime(message["timestamp"], "%m/%d/%Y")
+    # Format to YYYY-MM-DD
+    formatted_date = date_obj.strftime("%Y-%m-%d")  
     return {
         "user_id": int(message["user_id"]),
         "event_type": message["event_type"],
-        "timestamp": message["timestamp"],
+        "date":  formatted_date,
         "product_id": int(message["product_id"]),
         "page_url": message.get("page_url", None),
         "device_type": message.get("device_type", None),
@@ -57,14 +72,10 @@ def process_message(message):
 
 # Function to log Pub/Sub messages
 def debug_message(message):
-    logging.info(f"Message data: {message.data}")
-    if hasattr(message, 'attributes'):
-        logging.info(f"Attributes: {message.attributes}")
-    return message
+    message_str = message.decode("utf-8")  # Decode bytes to string
+    logging.info(f"Message data: {message_str}")
+    return message  # Return for further processing
 
-def parse_pubsub_message(pubsub_message):
-    message_data = pubsub_message.data.decode("utf-8")  # Decode bytes to string
-    print(message_data)
 
 # Define your Dataflow pipeline
 with beam.Pipeline(options=options) as p:
@@ -72,12 +83,14 @@ with beam.Pipeline(options=options) as p:
         p
         | "Read from Pub/Sub" >> beam.io.ReadFromPubSub(topic=f"projects/{project_id}/topics/{topic_name}")
         | "Apply Fixed Window" >> beam.WindowInto(FixedWindows(60))
+        | "Decode Messages" >> beam.Map(lambda msg: msg.decode("utf-8"))  # Decode bytes to string
+        | "Parse JSON" >> beam.Map(json.loads)
         #| "Write to File" >> beam.io.WriteToText("debug_output.txt")
         #| "Debug Messages" >> beam.Map(debug_message)  # Log each message
-        | "Process Messages" >> beam.Map(parse_pubsub_message )
-        #| "Write to BigQuery" >> beam.io.WriteToBigQuery(
-            #f"{project_id}:{dataset_name}.{table_name}",
-            #schema=bq_schema,  # Pass the schema here
-            #write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
-        #)
+        | "Process Messages" >> beam.Map(process_message)
+        | "Write to BigQuery" >> beam.io.WriteToBigQuery(
+            f"{project_id}:{dataset_name}.{table_name}",
+            schema=bq_schema,  # Pass the schema here
+            write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
+        )
     )

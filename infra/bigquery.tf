@@ -9,11 +9,14 @@ resource "google_bigquery_table" "event_data" {
   table_id   = "event_data_table"
   project    = var.project_id
   
+  # Disable deletion protection
+  deletion_protection = false
+
   schema = <<EOF
 [
   {"name": "user_id", "type": "INTEGER", "mode": "REQUIRED"},
   {"name": "event_type", "type": "STRING", "mode": "REQUIRED"},
-  {"name": "timestamp", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "date", "type": "DATE", "mode": "REQUIRED"},
   {"name": "product_id", "type": "INTEGER", "mode": "REQUIRED"},
   {"name": "page_url", "type": "STRING", "mode": "NULLABLE"},
   {"name": "device_type", "type": "STRING", "mode": "NULLABLE"},
