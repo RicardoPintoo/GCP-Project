@@ -74,7 +74,7 @@ with beam.Pipeline(options=options) as p:
         | "Apply Fixed Window" >> beam.WindowInto(FixedWindows(60))
         #| "Write to File" >> beam.io.WriteToText("debug_output.txt")
         #| "Debug Messages" >> beam.Map(debug_message)  # Log each message
-        | "Process Messages" >> beam.Map(parse_pubsub_message)
+        | "Process Messages" >> beam.Map(parse_pubsub_message )
         #| "Write to BigQuery" >> beam.io.WriteToBigQuery(
             #f"{project_id}:{dataset_name}.{table_name}",
             #schema=bq_schema,  # Pass the schema here
