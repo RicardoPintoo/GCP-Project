@@ -17,8 +17,16 @@ topic_name = os.getenv('TOPIC_NAME')
 dataset_name = os.getenv('DATASET_NAME')
 table_name = os.getenv('TABLE_NAME')
 
+# Define the folder and log file name
+log_folder = "logs"
+log_file = os.path.join(log_folder, "pubsub_debug_directrunner.log")
+
+# Create the folder if it doesn't exist
+if not os.path.exists(log_folder):
+    os.makedirs(log_folder)
+
 # Set up logging
-log_file = "pubsub_debug_directrunner.log"
+#log_file = "logs/pubsub_debug_directrunner.log"
 logging.basicConfig(
     filename=log_file,
     filemode='w',
@@ -27,7 +35,7 @@ logging.basicConfig(
 )
 
 # Define BigQuery schema
-bq_schema = "user_id:INTEGER, event_type:STRING, timestamp:TIMESTAMP, product_id:INTEGER, page_url:STRING, device_type:STRING, location:STRING, duration_seconds:INTEGER, comment_text:STRING, subscription_plan:STRING, form_id:INTEGER, login_method:STRING, referral_source:STRING, streaming_quality:STRING, cart_items_count:INTEGER, error_message:STRING"
+bq_schema = "user_id:INTEGER, event_type:STRING, date:DATE, product_id:INTEGER, page_url:STRING, device_type:STRING, location:STRING, duration_seconds:INTEGER, comment_text:STRING, subscription_plan:STRING, form_id:INTEGER, login_method:STRING, referral_source:STRING, streaming_quality:STRING, cart_items_count:INTEGER, error_message:STRING"
 
 options = PipelineOptions()
 
@@ -43,14 +51,15 @@ standard_options = options.view_as(StandardOptions)
 standard_options.view_as(StandardOptions).runner = "DataflowRunner"  # Use DataflowRunner
 standard_options.view_as(StandardOptions).streaming = True  # Enable streaming mode
 
-# Example function to process the incoming message (modify as needed)
+# Function to process the incoming message (modify as needed)
 def process_message(message):
-    from datetime import datetime  # Import datetime inside the function
-    # Example of transforming the message into a dictionary with the schema fields
+    # Import datetime inside the function
+    from datetime import datetime
     # Convert to datetime object
     date_obj = datetime.strptime(message["timestamp"], "%m/%d/%Y")
     # Format to YYYY-MM-DD
-    formatted_date = date_obj.strftime("%Y-%m-%d")  
+    formatted_date = date_obj.strftime("%Y-%m-%d")
+    # Transforming the message into a dictionary with the schema fields  
     return {
         "user_id": int(message["user_id"]),
         "event_type": message["event_type"],
@@ -74,23 +83,23 @@ def process_message(message):
 def debug_message(message):
     message_str = message.decode("utf-8")  # Decode bytes to string
     logging.info(f"Message data: {message_str}")
-    return message  # Return for further processing
+    return message
 
 
-# Define your Dataflow pipeline
+# Dataflow pipeline
 with beam.Pipeline(options=options) as p:
     (
         p
         | "Read from Pub/Sub" >> beam.io.ReadFromPubSub(topic=f"projects/{project_id}/topics/{topic_name}")
-        | "Apply Fixed Window" >> beam.WindowInto(FixedWindows(60))
+        | "Apply Fixed Window" >> beam.WindowInto(FixedWindows(300),
+                                                  trigger=AfterProcessingTime(0),
+                                                  accumulation_mode=AccumulationMode.DISCARDING)
         | "Decode Messages" >> beam.Map(lambda msg: msg.decode("utf-8"))  # Decode bytes to string
         | "Parse JSON" >> beam.Map(json.loads)
-        #| "Write to File" >> beam.io.WriteToText("debug_output.txt")
-        #| "Debug Messages" >> beam.Map(debug_message)  # Log each message
         | "Process Messages" >> beam.Map(process_message)
         | "Write to BigQuery" >> beam.io.WriteToBigQuery(
             f"{project_id}:{dataset_name}.{table_name}",
-            schema=bq_schema,  # Pass the schema here
+            schema=bq_schema,
             write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
         )
     )
