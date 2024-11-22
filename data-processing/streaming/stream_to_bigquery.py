@@ -2,10 +2,11 @@ import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions, StandardOptions, GoogleCloudOptions
 from apache_beam.transforms.window import FixedWindows
 from apache_beam.transforms.trigger import AfterProcessingTime, AccumulationMode
-import os
+from google.cloud import firestore
 from dotenv import load_dotenv
 import logging
 import json
+import os
 
 # Load environment variables from .env file
 load_dotenv()
@@ -92,8 +93,8 @@ with beam.Pipeline(options=options) as p:
         p
         | "Read from Pub/Sub" >> beam.io.ReadFromPubSub(topic=f"projects/{project_id}/topics/{topic_name}")
         | "Apply Fixed Window" >> beam.WindowInto(FixedWindows(300),
-                                                  trigger=AfterProcessingTime(0),
-                                                  accumulation_mode=AccumulationMode.DISCARDING)
+                                                  trigger=AfterProcessingTime(0), # Trigger the window immediately
+                                                  accumulation_mode=AccumulationMode.DISCARDING) # Discard all the data than comes after fixedwindows time
         | "Decode Messages" >> beam.Map(lambda msg: msg.decode("utf-8"))  # Decode bytes to string
         | "Parse JSON" >> beam.Map(json.loads)
         | "Process Messages" >> beam.Map(process_message)
